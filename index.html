@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoStory - Ruang Cerita Visual</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --maroon: #800000;
+        }
+        body {
+            font-family: 'Comic Neue', cursive;
+            background-color: #fcfaf7;
+            color: #333;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        h1, h2, .maroon-text {
+            color: var(--maroon);
+            font-family: 'Comic Neue', cursive;
+            font-weight: 700;
+        }
+        .book-container {
+            perspective: 2000px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 400px;
+        }
+        .book {
+            width: 95%;
+            max-width: 900px;
+            height: 500px;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .page {
+            position: absolute;
+            width: 50%;
+            height: 100%;
+            top: 0;
+            background: #fff;
+            box-shadow: inset 3px 0px 20px rgba(0,0,0,0.05), 5px 5px 15px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+            transition: transform 0.6s ease-in-out;
+        }
+        .left-page {
+            left: 0;
+            border-radius: 15px 0 0 15px;
+            border-right: 1px solid rgba(0,0,0,0.1);
+            z-index: 2;
+            position: relative;
+        }
+        .right-page {
+            left: 50%;
+            border-radius: 0 15px 15px 0;
+            background-color: #fdfbf7;
+            z-index: 1;
+        }
+        .narrative-bubble {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border-radius: 16px;
+            padding: 24px;
+            margin: 20px;
+            border: 2px solid var(--maroon);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            max-height: 70%;
+            overflow-y: auto;
+        }
+        .loading-overlay {
+            background: rgba(255,255,255,0.95);
+            z-index: 999;
+            backdrop-filter: blur(4px);
+        }
+        .img-loader {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #f3f4f6;
+            color: var(--maroon);
+            z-index: 10;
+            transition: opacity 0.3s ease;
+        }
+        .img-loader.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        @media (max-width: 768px) {
+            .book { height: 400px; }
+            .narrative-bubble { padding: 15px; margin: 10px; font-size: 0.95rem; }
+        }
+        @media (orientation: portrait) {
+            .book { height: 70vh; flex-direction: column; }
+            .page { width: 100%; left: 0; position: relative; height: 50%; }
+            .left-page { border-radius: 15px 15px 0 0; border-right: none; border-bottom: 1px solid rgba(0,0,0,0.1); }
+            .right-page { border-radius: 0 0 15px 15px; }
+        }
+        
+        .page-flip-next { transform: rotateY(-10deg) scale(0.98); }
+        .page-flip-prev { transform: rotateY(10deg) scale(0.98); }
+        
+        #pageImage { transition: opacity 0.5s ease; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+        #pageImage.loaded { opacity: 1; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <header class="text-center mb-8">
+        <h1 class="text-4xl md:text-6xl font-black mb-2 tracking-tight">Ruang Cerita Visual</h1>
+        <p class="text-lg md:text-xl text-gray-500 font-medium italic">Wujudkan karakter impianmu ke dalam lembaran cerita.</p>
+    </header>
+
+    <main class="max-w-6xl mx-auto space-y-8 pb-12">
+        <section class="bg-white p-6 md:p-8 rounded-3xl shadow-xl border-4 border-red-800/10">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="flex flex-col">
+                    <label class="block font-bold maroon-text text-2xl mb-3">Tuliskan Ide Ceritamu</label>
+                    <div class="relative flex-grow">
+                        <textarea id="promptInput" class="w-full h-48 md:h-full p-5 border-2 border-gray-100 bg-gray-50 rounded-2xl focus:border-red-800 focus:bg-white outline-none transition duration-300 resize-none text-lg font-bold" placeholder="Contoh: Petualangan seekor kelinci yang menemukan pulau permen cokelat..."></textarea>
+                    </div>
+                    <div class="flex justify-between items-center mt-3 text-sm font-semibold text-gray-400">
+                        <span id="charCount">0 Karakter</span>
+                        <span class="italic text-red-900/40">Made with love by Dewi Kartika Putri</span>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block font-bold maroon-text">Pilih Bahasa</label>
+                            <select id="langSelect" class="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-red-800 outline-none font-bold cursor-pointer">
+                                <option value="id" selected>Bahasa Indonesia</option>
+                                <option value="en">English (Inggris)</option>
+                            </select>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block font-bold maroon-text">Suara Narasi</label>
+                            <select id="voiceSelect" class="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-red-800 outline-none font-bold cursor-pointer">
+                                <option value="Kore">Suara Perempuan</option>
+                                <option value="Puck">Suara Laki-laki</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="block font-bold maroon-text">Ilustrasi Karakter (Opsional)</label>
+                        <div class="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center cursor-pointer hover:border-red-800 hover:bg-red-50/30 transition group" onclick="document.getElementById('imageUpload').click()">
+                            <div class="text-gray-400 group-hover:text-red-800 transition">
+                                <p class="font-bold" id="uploadLabel">Klik untuk Unggah Gambar</p>
+                                <p class="text-xs">Maksimal ukuran file 5MB</p>
+                            </div>
+                            <input type="file" id="imageUpload" class="hidden" accept="image/*">
+                        </div>
+                    </div>
+
+                    <button id="generateBtn" class="w-full bg-red-800 hover:bg-red-900 text-white font-black py-5 rounded-2xl shadow-xl transform active:scale-[0.98] transition-all duration-200 flex justify-center items-center gap-3 text-2xl uppercase tracking-wider">
+                        <span>✨</span> Generate Story
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section id="storySection" class="hidden animate-in fade-in slide-in-from-bottom-8 duration-700">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+                <h2 class="text-3xl font-black maroon-text">My Storybook 📖</h2>
+                <div class="flex gap-3">
+                    <button id="audioBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold transition flex items-center gap-2 shadow-lg">
+                        <span>🔊</span> Baca Cerita
+                    </button>
+                    <button id="exportPdfBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold transition flex items-center gap-2 shadow-lg">
+                        <span>📥</span> Simpan PDF
+                    </button>
+                </div>
+            </div>
+
+            <div class="book-container py-4">
+                <div id="book" class="book">
+                    <div class="page left-page" id="pageLeft">
+                        <div id="imageLoader" class="img-loader">
+                            <div class="w-10 h-10 border-4 border-red-800 border-t-transparent rounded-full animate-spin mb-2"></div>
+                            <span class="text-xs font-bold uppercase tracking-widest">Menggambar...</span>
+                        </div>
+                        <img id="pageImage" src="" alt="Ilustrasi">
+                    </div>
+                    <div class="page right-page" id="pageRight">
+                        <div class="narrative-bubble">
+                            <p id="pageText" class="text-xl leading-relaxed maroon-text font-bold"></p>
+                        </div>
+                        <div class="flex-grow flex items-end justify-center p-6">
+                            <div class="w-full h-32 rounded-xl bg-gray-100 overflow-hidden relative border-2 border-red-800/10">
+                                <img id="subImage" src="" class="w-full h-full object-cover opacity-80">
+                                <div class="absolute inset-0 flex items-center justify-center bg-white/20">
+                                    <span class="text-red-900 font-black text-2xl uppercase italic drop-shadow-md">AutoStory</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-center items-center gap-8 mt-6">
+                <div class="text-gray-400 font-bold italic text-sm text-center">
+                    Klik 2x Sisi Buku <br> atau Pakai Panah Keyboard
+                </div>
+                <div class="flex items-center gap-2 text-red-800 font-black text-xl bg-red-50 px-4 py-2 rounded-full border-2 border-red-100">
+                    <span id="pageCounter">1 / 5</span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="loader" class="fixed inset-0 loading-overlay hidden flex flex-col items-center justify-center text-center px-4">
+        <div class="relative w-24 h-24 mb-6">
+            <div class="absolute inset-0 border-8 border-red-100 rounded-full"></div>
+            <div class="absolute inset-0 border-8 border-red-800 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+        <p class="font-black text-red-800 text-3xl tracking-tighter animate-pulse uppercase">Loading your story</p>
+        <p class="text-gray-500 font-bold mt-2 text-lg">Lagi nungguin ya.. sabar ya guys hihi</p>
+    </div>
+
+    <audio id="flipSound" src="https://www.soundjay.com/misc/sounds/page-flip-01a.mp3" preload="auto"></audio>
+
+    <script type="module">
+        const apiKey = ""; 
+
+        let storyData = [];
+        let currentIndex = 0;
+        let isAudioUnlocked = false;
+
+        const el = {
+            input: document.getElementById('promptInput'),
+            count: document.getElementById('charCount'),
+            genBtn: document.getElementById('generateBtn'),
+            storySec: document.getElementById('storySection'),
+            loader: document.getElementById('loader'),
+            imgLoader: document.getElementById('imageLoader'),
+            text: document.getElementById('pageText'),
+            img: document.getElementById('pageImage'),
+            subImg: document.getElementById('subImage'),
+            book: document.getElementById('book'),
+            flip: document.getElementById('flipSound'),
+            pdfBtn: document.getElementById('exportPdfBtn'),
+            audioBtn: document.getElementById('audioBtn'),
+            pCount: document.getElementById('pageCounter')
+        };
+
+        const unlockAudio = () => {
+            if (isAudioUnlocked) return;
+            el.flip.play().then(() => {
+                el.flip.pause();
+                el.flip.currentTime = 0;
+                isAudioUnlocked = true;
+            }).catch(e => console.log("Audio init failed"));
+        };
+
+        document.addEventListener('click', unlockAudio, { once: false });
+        document.addEventListener('touchstart', unlockAudio, { once: false });
+        el.genBtn.addEventListener('mousedown', unlockAudio);
+
+        el.input.addEventListener('input', () => el.count.textContent = `${el.input.value.length} Karakter`);
+
+        async function callGemini(prompt, system) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const body = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: system }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            pages: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        text: { type: "string" },
+                                        imageDescription: { type: "string" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            let attempts = 0;
+            while (attempts < 3) {
+                try {
+                    const res = await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+                    const data = await res.json();
+                    return JSON.parse(data.candidates[0].content.parts[0].text);
+                } catch (e) {
+                    attempts++;
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+            }
+            throw new Error("AI Timeout");
+        }
+
+        async function callImagen(prompt) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+            const body = {
+                instances: [{ prompt: `Detailed children's book illustration, vibrant colors, storybook style, ${prompt}` }],
+                parameters: { sampleCount: 1 }
+            };
+
+            try {
+                const res = await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+                if (!res.ok) throw new Error();
+                const json = await res.json();
+                return `data:image/png;base64,${json.predictions[0].bytesBase64Encoded}`;
+            } catch (e) {
+                return `https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=800&auto=format&fit=crop`;
+            }
+        }
+
+        async function playNarrative(text) {
+            const voice = document.getElementById('voiceSelect').value;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+            const body = {
+                contents: [{ parts: [{ text: `Bacakan dengan suara ceria: ${text}` }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } }
+                }
+            };
+
+            try {
+                const res = await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+                const json = await res.json();
+                const pcm = json.candidates[0].content.parts[0].inlineData.data;
+                const binary = atob(pcm);
+                const bytes = new Uint8Array(binary.length);
+                for(let i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                
+                const wavHeader = new ArrayBuffer(44);
+                const view = new DataView(wavHeader);
+                view.setUint32(0, 0x52494646, false); view.setUint32(4, 36 + bytes.length, true);
+                view.setUint32(8, 0x57415645, false); view.setUint32(12, 0x666d7420, false);
+                view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+                view.setUint16(22, 1, true); view.setUint32(24, 24000, true);
+                view.setUint32(28, 48000, true); view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true); view.setUint32(36, 0x64617461, false);
+                view.setUint32(40, bytes.length, true);
+
+                const blob = new Blob([wavHeader, bytes], { type: 'audio/wav' });
+                const audio = new Audio(URL.createObjectURL(blob));
+                audio.play();
+            } catch (e) {}
+        }
+
+        /**
+         * OPTIMALISASI PEMUATAN GAMBAR
+         * Memastikan gambar di-reset statusnya setiap kali halaman berpindah
+         * Menggunakan Pre-loader internal untuk menjamin onload terpicu
+         */
+        function forceLoadImage(url) {
+            return new Promise((resolve) => {
+                // 1. Reset visual state
+                el.img.classList.remove('loaded');
+                el.imgLoader.classList.remove('hidden');
+                
+                // 2. Buat objek image temporer untuk pre-loading
+                const tempImg = new Image();
+                
+                tempImg.onload = () => {
+                    // Update tampilan asli saat pre-load selesai
+                    el.img.src = url;
+                    el.subImg.src = url;
+                    el.imgLoader.classList.add('hidden');
+                    el.img.classList.add('loaded');
+                    resolve();
+                };
+                
+                tempImg.onerror = () => {
+                    el.img.src = 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=800&auto=format&fit=crop';
+                    el.imgLoader.classList.add('hidden');
+                    resolve();
+                };
+
+                // Trigger loading
+                tempImg.src = url;
+            });
+        }
+
+        el.genBtn.addEventListener('click', async () => {
+            const prompt = el.input.value.trim();
+            if (!prompt) return;
+
+            el.loader.classList.remove('hidden');
+            try {
+                const lang = document.getElementById('langSelect').value;
+                const story = await callGemini(prompt, `Write a fun 5-page children's story in ${lang === 'id' ? 'Indonesian' : 'English'}.`);
+                storyData = story.pages;
+
+                // Memproses gambar secara berurutan agar stabil
+                for (let i = 0; i < storyData.length; i++) {
+                    storyData[i].imgUrl = await callImagen(storyData[i].imageDescription);
+                }
+
+                currentIndex = 0;
+                await updateDisplay(false);
+                el.storySec.classList.remove('hidden');
+                el.storySec.scrollIntoView({ behavior: 'smooth' });
+            } catch (e) {
+                alert("Gagal membuat cerita. Coba lagi.");
+            } finally {
+                el.loader.classList.add('hidden');
+            }
+        });
+
+        async function updateDisplay(withSound = true) {
+            if (!storyData[currentIndex]) return;
+            const data = storyData[currentIndex];
+            
+            if (withSound && isAudioUnlocked) {
+                el.flip.pause();
+                el.flip.currentTime = 0;
+                el.flip.play().catch(err => {});
+            }
+
+            // Update UI teks & counter segera
+            el.text.textContent = data.text;
+            el.pCount.textContent = `${currentIndex + 1} / ${storyData.length}`;
+
+            // Pemuatan gambar yang dioptimalkan
+            await forceLoadImage(data.imgUrl);
+            
+            setTimeout(() => {
+                el.book.classList.remove('page-flip-next', 'page-flip-prev');
+            }, 600);
+        }
+
+        const goNext = () => {
+            if (currentIndex < storyData.length - 1) {
+                currentIndex++;
+                el.book.classList.add('page-flip-next');
+                updateDisplay(true);
+            }
+        };
+
+        const goPrev = () => {
+            if (currentIndex > 0) {
+                currentIndex--;
+                el.book.classList.add('page-flip-prev');
+                updateDisplay(true);
+            }
+        };
+
+        document.getElementById('pageRight').addEventListener('dblclick', goNext);
+        document.getElementById('pageLeft').addEventListener('dblclick', goPrev);
+        window.addEventListener('keydown', (e) => {
+            if (e.key === "ArrowRight") goNext();
+            if (e.key === "ArrowLeft") goPrev();
+        });
+
+        el.audioBtn.addEventListener('click', () => {
+            unlockAudio();
+            playNarrative(storyData[currentIndex].text);
+        });
+
+        el.pdfBtn.addEventListener('click', () => {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('l', 'mm', 'a4');
+            storyData.forEach((p, i) => {
+                if (i > 0) doc.addPage();
+                try { doc.addImage(p.imgUrl, 'JPEG', 10, 10, 130, 190); } catch(e) {}
+                doc.setFontSize(16); 
+                doc.text(doc.splitTextToSize(p.text, 120), 150, 40);
+            });
+            doc.save("My_Storybook.pdf");
+        });
+    </script>
+</body>
+</html>
